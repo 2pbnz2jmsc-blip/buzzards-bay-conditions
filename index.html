@@ -3,36 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
 <title>Buzzards Bay wind &amp; waves</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   /*
-    Palette borrowed from NOAA nautical charts:
-    chart paper, sounding blues, and the magenta used for buoys and lights.
+    Night palette to match the inverted ocean chart:
+    deep navy panels, soft chart ink, and a brightened chart magenta for waves.
   */
   :root {
-    --paper: #EEF2EC;
-    --panel: #F8FAF6;
-    --ink: #1B2430;
-    --muted: #5B6875;
-    --shoal: #CFE0EC;
-    --deep: #1F3A5F;
-    --magenta: #A8267A;
-    --rule: #D5DDD6;
-    --w0: #2A9D8F; --w1: #6FA84F; --w2: #D9A826; --w3: #E07B39; --w4: #C73E55;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --paper: #101A24; --panel: #15212D; --ink: #E4EAF0; --muted: #93A2B1;
-      --shoal: #203447; --deep: #9CC3E6; --magenta: #E070B8; --rule: #26384A;
-    }
+    --night: #0A1622;
+    --panel: #0F1D2B;
+    --panel-hi: #17293A;
+    --ink: #DCE6EE;
+    --muted: #8FA2B3;
+    --deep: #9CC6EA;
+    --magenta: #E36BB8;
+    --rule: #22364A;
+    --w0: #2FB5A5; --w1: #7FBF5A; --w2: #E4B83A; --w3: #EE8544; --w4: #E0506A;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
-    background: var(--paper); color: var(--ink);
+    background: var(--night); color: var(--ink);
     font: 15px/1.45 "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
     display: grid; grid-template-columns: 340px 1fr; grid-template-rows: 100%;
     padding-top: env(safe-area-inset-top, 0px);
@@ -54,12 +49,13 @@
     font: inherit; font-size: 13px; background: none; color: var(--ink);
     border: 0; padding: 5px 10px; cursor: pointer;
   }
-  .seg button[aria-pressed="true"] { background: var(--deep); color: var(--panel); }
+  .seg button[aria-pressed="true"] { background: var(--deep); color: var(--night); font-weight: 600; }
   button:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
   #refresh {
     font: inherit; font-size: 13px; margin-left: auto; background: none; color: var(--deep);
     border: 1px solid var(--rule); border-radius: 6px; padding: 5px 10px; cursor: pointer;
   }
+  #refresh:hover, .seg button:hover:not([aria-pressed="true"]) { background: var(--panel-hi); }
   #status { font-size: 13px; color: var(--muted); padding: 10px 20px; border-bottom: 1px solid var(--rule); }
   #status.err { color: var(--w4); }
   #list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
@@ -69,7 +65,7 @@
     display: grid; grid-template-columns: 1fr auto auto; gap: 14px; align-items: center;
     padding: 11px 20px;
   }
-  #list button:hover { background: var(--shoal); }
+  #list button:hover { background: var(--panel-hi); }
   #list button:focus-visible { outline: 2px solid var(--magenta); outline-offset: -2px; }
   .nm { font-weight: 600; }
   .id { color: var(--muted); font-size: 12px; }
@@ -82,27 +78,44 @@
   .scale span { flex: 1; height: 8px; }
   .scale-labels { display: flex; justify-content: space-between; }
   .legend a { color: var(--deep); }
-  #map { height: 100%; background: var(--shoal); }
+
+  /* Map: Esri Ocean flipped to night, keeping depth shading */
+  #map { height: 100%; background: var(--night); }
+  .night-ocean { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
+  .leaflet-container { background: var(--night); }
+  .leaflet-control-attribution { background: rgba(10,22,34,.8) !important; color: var(--muted) !important; }
+  .leaflet-control-attribution a { color: var(--deep) !important; }
+  .leaflet-bar a { background: var(--panel) !important; color: var(--ink) !important; border-color: var(--rule) !important; }
+  .leaflet-bar a:hover { background: var(--panel-hi) !important; }
+  .leaflet-bar { border-color: var(--rule) !important; }
 
   /* Map markers */
   .stn { position: relative; }
-  .stn svg { display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
+  .stn svg { display: block; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
   .stn .spd {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    font: 700 13px/1 "Barlow Condensed", sans-serif; color: #fff; pointer-events: none;
+    font: 700 13px/1 "Barlow Condensed", sans-serif; color: #08131D; pointer-events: none;
   }
   .stn .wv {
     position: absolute; left: 50%; top: 100%; transform: translate(-50%, 2px);
-    background: var(--magenta); color: #fff; border-radius: 9px; padding: 1px 7px;
-    font: 600 12px/16px "Barlow Condensed", sans-serif; white-space: nowrap;
+    background: var(--magenta); color: #1A0716; border-radius: 9px; padding: 1px 7px;
+    font: 700 12px/16px "Barlow Condensed", sans-serif; white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0,0,0,.5);
   }
   .stn.only-wave .wv { top: 50%; transform: translate(-50%, -50%); font-size: 14px; padding: 2px 9px; }
-  .stn.old { opacity: .45; }
+  .stn.old { opacity: .4; }
+
+  /* Popups */
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--ink); box-shadow: 0 4px 18px rgba(0,0,0,.6); }
+  .leaflet-popup-content-wrapper { border: 1px solid var(--rule); border-radius: 10px; }
+  .leaflet-container a.leaflet-popup-close-button { color: var(--muted); }
   .leaflet-popup-content { font: 14px/1.45 "Barlow", sans-serif; margin: 12px 14px; }
-  .pop h2 { font: 700 19px/1.1 "Barlow Condensed", sans-serif; margin: 0 0 2px; color: #1F3A5F; }
+  .pop h2 { font: 700 19px/1.1 "Barlow Condensed", sans-serif; margin: 0 0 2px; color: var(--deep); }
+  .pop .meta { color: var(--muted); font-size: 13px; }
   .pop table { border-collapse: collapse; margin: 8px 0; }
   .pop td { padding: 2px 12px 2px 0; }
-  .pop td:first-child { color: #5B6875; }
+  .pop td:first-child { color: var(--muted); }
+  .pop a { color: var(--deep); }
 
   @media (max-width: 760px) {
     body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; overflow: auto; height: auto; }
@@ -133,7 +146,7 @@
   <div id="status" role="status">Loading observations…</div>
   <ul id="list"></ul>
   <div class="legend">
-    Wind speed (knots) — arrows point the way the wind is blowing
+    Wind speed (knots). Arrows point the way the wind is blowing.
     <div class="scale"><span style="background:var(--w0)"></span><span style="background:var(--w1)"></span><span style="background:var(--w2)"></span><span style="background:var(--w3)"></span><span style="background:var(--w4)"></span></div>
     <div class="scale-labels"><span>0</span><span>10</span><span>15</span><span>20</span><span>25+</span></div>
     <p style="margin:10px 0 0"><span class="wave">Magenta tags</span> show significant wave height. Data: <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">NOAA NDBC</a>. Not for navigation.</p>
@@ -145,12 +158,8 @@
 <script>
 /* ---------------- Settings ---------------- */
 
-// NDBC publishes every station's most recent report in one text file.
-const DATA_URL = "/ndbc";
-
-// If the browser blocks the direct request (CORS), put a proxy URL here.
-// The data URL is appended, URL-encoded. Example: "https://your-worker.example.workers.dev/?url="
-const PROXY = "";
+// Your Cloudflare function first; NOAA directly as a fallback (handy for local testing).
+const SOURCES = ["/ndbc", "https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt"];
 
 // Area to show: [south, west, north, east]. Covers Buzzards Bay, Vineyard Sound,
 // the mouth of Narragansett Bay, western Nantucket Sound and Block Island.
@@ -183,11 +192,11 @@ const markers = {};
 const map = L.map("map", { zoomControl: true }).setView([41.45, -70.9], 10);
 L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
-  { maxZoom: 13, attribution: "Tiles &copy; Esri, GEBCO, NOAA, Garmin" }
+  { maxZoom: 13, className: "night-ocean", attribution: "Tiles &copy; Esri, GEBCO, NOAA, Garmin" }
 ).addTo(map);
 L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}",
-  { maxZoom: 13 }
+  { maxZoom: 13, className: "night-ocean" }
 ).addTo(map);
 const layer = L.layerGroup().addTo(map);
 
@@ -216,30 +225,25 @@ function parse(text) {
   return out;
 }
 
-async function getText(url) {
-  const r = await fetch(url, { cache: "no-store" });
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  return r.text();
-}
-
 async function load() {
   setStatus("Loading observations…");
-  try {
-    let text;
-    try { text = await getText(DATA_URL); }
-    catch (e) {
-      if (!PROXY) throw e;
-      text = await getText(PROXY + encodeURIComponent(DATA_URL));
-    }
-    stations = parse(text);
-    render();
-    const newest = stations.reduce((a, s) => (s.time > a ? s.time : a), new Date(0));
-    setStatus(stations.length
-      ? `${stations.length} stations. Newest report ${fmtTime(newest)}. Updates every ${REFRESH_MINUTES} min.`
-      : "No stations reported inside the map area. Widen BBOX in the settings.");
-  } catch (e) {
-    setStatus("Couldn't reach NOAA's data file. If your browser console shows a CORS error, set PROXY at the top of the script. Details: " + e.message, true);
+  let lastErr;
+  for (const url of SOURCES) {
+    try {
+      const r = await fetch(url, { cache: "no-store" });
+      if (!r.ok) throw new Error(`HTTP ${r.status} from ${url}`);
+      const text = await r.text();
+      if (!text.includes("#STN")) throw new Error(`Unexpected response from ${url}`);
+      stations = parse(text);
+      render();
+      const newest = stations.reduce((a, s) => (s.time > a ? s.time : a), new Date(0));
+      setStatus(stations.length
+        ? `${stations.length} stations. Newest report ${fmtTime(newest)}. Updates every ${REFRESH_MINUTES} min.`
+        : "No stations reported inside the map area. Widen BBOX in the settings.");
+      return;
+    } catch (e) { lastErr = e; }
   }
+  setStatus("Couldn't reach NOAA's data. Check that /ndbc on your site returns text starting with #STN. Details: " + (lastErr ? lastErr.message : "unknown"), true);
 }
 
 /* ---------------- Formatting ---------------- */
@@ -269,10 +273,10 @@ function markerHtml(s) {
   // NDBC direction = where wind comes FROM; rotate 180° so the arrow points downwind.
   const rot = s.wdir == null ? 0 : (s.wdir + 180) % 360;
   const arrow = s.wdir == null ? "" :
-    `<path d="M22 2 L29 13 L15 13 Z" fill="${windColor(s.wspd)}" stroke="#fff" stroke-width="1.5" transform="rotate(${rot} 22 22)"/>`;
+    `<path d="M22 2 L29 13 L15 13 Z" fill="${windColor(s.wspd)}" stroke="#08131D" stroke-width="1.5" transform="rotate(${rot} 22 22)"/>`;
   return `<div class="stn${isStale(s) ? " old" : ""}">
     <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
-      ${arrow}<circle cx="22" cy="22" r="11" fill="${windColor(s.wspd)}" stroke="#fff" stroke-width="2"/>
+      ${arrow}<circle cx="22" cy="22" r="11" fill="${windColor(s.wspd)}" stroke="#08131D" stroke-width="2"/>
     </svg><span class="spd">${wind(s.wspd)}</span>${wv}</div>`;
 }
 
@@ -284,7 +288,7 @@ function popupHtml(s) {
   if (s.wtmp != null) rows.push(["Water", cToF(s.wtmp)]);
   if (s.atmp != null) rows.push(["Air", cToF(s.atmp)]);
   return `<div class="pop"><h2>${nameOf(s)}</h2>
-    <div style="color:#5B6875;font-size:13px">${s.id} reported ${fmtTime(s.time)}</div>
+    <div class="meta">${s.id} reported ${fmtTime(s.time)}</div>
     <table>${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("")}</table>
     <a href="https://www.ndbc.noaa.gov/station_page.php?station=${s.id.toLowerCase()}" target="_blank" rel="noopener">Station history on NDBC</a></div>`;
 }
