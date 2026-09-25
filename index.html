@@ -140,6 +140,46 @@
   .stn .t-temp { background: var(--temp); }
   .stn.old { opacity: .4; }
 
+  /* ---------- Data-driven animations ---------- */
+  /* Wave ripples: size from wave height, timing from the buoy's wave period */
+  .stn .ripple {
+    position: absolute; left: 50%; top: 50%; width: var(--size); height: var(--size);
+    border: 2px solid var(--magenta); border-radius: 50%; pointer-events: none;
+    transform: translate(-50%, -50%) scale(.25); opacity: 0;
+    animation: ripple var(--dur) ease-out infinite;
+  }
+  .stn .ripple + .ripple { animation-delay: calc(var(--dur) / -2); }
+  @keyframes ripple {
+    0%   { transform: translate(-50%, -50%) scale(.25); opacity: .85; }
+    100% { transform: translate(-50%, -50%) scale(1);   opacity: 0; }
+  }
+  /* Wind chevrons: stream downwind, faster in stronger wind */
+  .stn .flow { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform: rotate(var(--rot)); pointer-events: none; }
+  .stn .flow i {
+    position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; opacity: 0;
+    animation: flow var(--fdur) linear infinite;
+  }
+  .stn .flow i:nth-child(2) { animation-delay: calc(var(--fdur) / -3); }
+  .stn .flow i:nth-child(3) { animation-delay: calc(var(--fdur) / -1.5); }
+  .stn .flow svg { display: block; overflow: visible; filter: drop-shadow(0 0 2px rgba(0,0,0,.7)); }
+  @keyframes flow {
+    0%   { transform: translateY(-27px); opacity: 0; }
+    20%  { opacity: .95; }
+    100% { transform: translateY(-62px); opacity: 0; }
+  }
+  /* Gust pulse: the wind circle swells, more for gustier stations */
+  .stn .core { position: absolute; inset: 0; }
+  .stn .core.gusty { animation: gust 3.2s ease-in-out infinite; animation-delay: var(--delay); }
+  @keyframes gust {
+    0%, 62%, 100% { transform: scale(1); }
+    72% { transform: scale(calc(1 + var(--amp))); }
+    84% { transform: scale(1); }
+  }
+  /* Motion off (button, or the visitor's reduce-motion setting) */
+  body.still .stn .ripple, body.still .stn .flow { display: none; }
+  body.still .stn .core { animation: none; }
+  .chip[data-layer="motion"][aria-pressed="true"] i { background: var(--deep); }
+
   /* Popups */
   .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--ink); box-shadow: 0 4px 18px rgba(0,0,0,.6); }
   .leaflet-popup-content-wrapper { border: 1px solid var(--rule); border-radius: 10px; }
@@ -173,6 +213,7 @@
       <button class="chip" data-layer="gust" aria-pressed="true"><i></i>Gusts</button>
       <button class="chip" data-layer="wave" aria-pressed="true"><i></i>Waves</button>
       <button class="chip" data-layer="temp" aria-pressed="true"><i></i>Water temp</button>
+      <button class="chip" data-layer="motion" id="motion" aria-pressed="true"><i></i>Motion</button>
     </div>
 
     <p class="label">Units</p>
@@ -200,7 +241,7 @@
       <div class="scale"><span style="background:var(--w0)"></span><span style="background:var(--w1)"></span><span style="background:var(--w2)"></span><span style="background:var(--w3)"></span><span style="background:var(--w4)"></span></div>
       <div class="scale-labels"><span>0</span><span>10</span><span>15</span><span>20</span><span>25+</span></div>
     </div>
-    <p style="margin:10px 0 0">Tags under each station show gusts (gray), significant wave height (<span class="wave">magenta</span>) and water temperature (<span style="color:var(--temp)">cyan</span>). Data: <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">NOAA NDBC</a>. Not for navigation.</p>
+    <p style="margin:10px 0 0">Tags under each station show gusts (gray), significant wave height (<span class="wave">magenta</span>) and water temperature (<span style="color:var(--temp)">cyan</span>). Ripples follow each buoy's wave height and period, chevrons stream faster in stronger wind, and circles pulse at gusty stations. Data: <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">NOAA NDBC</a>. Not for navigation.</p>
   </div>
 </aside>
 <div id="map" aria-label="Map of stations"></div>
@@ -350,6 +391,7 @@ function fmtTime(d) {
   const clock = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   return mins < 90 ? `${clock} (${mins} min ago)` : `${d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
 }
+const kt = (ms) => ms * 1.94384;
 function windColor(ms) {
   const kt = ms * 1.94384;
   return kt < 10 ? "var(--w0)" : kt < 15 ? "var(--w1)" : kt < 20 ? "var(--w2)" : kt < 25 ? "var(--w3)" : "var(--w4)";
@@ -375,18 +417,49 @@ function markerHtml(s) {
   if (v.wave) tags.push(`<span class="t-wave">${wave(s.wvht)} ${units.wave}</span>`);
   if (v.temp) tags.push(`<span class="t-temp">${temp(s.wtmp)}°</span>`);
   const tagHtml = tags.length ? `<div class="tags">${tags.join("")}</div>` : "";
-  const old = isStale(s) ? " old" : "";
+  const stale = isStale(s);
+  const old = stale ? " old" : "";
 
-  if (!v.wind) return `<div class="stn nowind${old}"><span class="pin"></span>${tagHtml}</div>`;
+  // Wave ripples: ring size grows with wave height; one pulse per dominant wave period.
+  let ripples = "";
+  if (v.wave && !stale) {
+    const size = Math.round(Math.min(46 + s.wvht * 34, 170));
+    const dur = Math.min(Math.max(s.dpd ?? 6, 3), 14);
+    ripples = `<span class="ripple" style="--size:${size}px;--dur:${dur}s"></span>`.repeat(2);
+  }
 
-  // NDBC direction = where wind comes FROM; rotate 180° so the arrow points downwind.
-  const rot = s.wdir == null ? 0 : (s.wdir + 180) % 360;
+  if (!v.wind) return `<div class="stn nowind${old}">${ripples}<span class="pin"></span>${tagHtml}</div>`;
+
+  const k = kt(s.wspd);
+  const rot = s.wdir == null ? 0 : (s.wdir + 180) % 360;   // point downwind
+
+  // Wind chevrons: skip in near-calm; cycle time drops from ~3.2s to 0.8s as wind rises.
+  let flow = "";
+  if (!stale && s.wdir != null && k >= 3) {
+    const fdur = Math.min(Math.max(3.4 - k * 0.09, 0.8), 3.2).toFixed(2);
+    const chev = `<i><svg viewBox="-7 -7 14 14"><path d="M-6 4 L0 -3 L6 4" fill="none" stroke="${windColor(s.wspd)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></i>`;
+    flow = `<div class="flow" style="--rot:${rot}deg;--fdur:${fdur}s">${chev.repeat(3)}</div>`;
+  }
+
+  // Gust pulse: amplitude grows with the gap between gusts and steady wind.
+  let core = `class="core"`;
+  if (!stale && show.gust && s.gst != null) {
+    const gap = kt(s.gst) - k;
+    if (gap >= 3) {
+      const amp = Math.min(0.05 + gap * 0.012, 0.22).toFixed(3);
+      const delay = (-(parseInt(s.id, 36) % 32) / 10).toFixed(1);   // stagger stations so they don't pulse in sync
+      core = `class="core gusty" style="--amp:${amp};--delay:${delay}s"`;
+    }
+  }
+
   const arrow = s.wdir == null ? "" :
     `<path d="M26 1 L34 13 L18 13 Z" fill="${windColor(s.wspd)}" stroke="#08131D" stroke-width="1.5" transform="rotate(${rot} 26 26)"/>`;
-  return `<div class="stn${old}">
-    <svg width="52" height="52" viewBox="0 0 52 52" aria-hidden="true">
-      ${arrow}<circle cx="26" cy="26" r="14" fill="${windColor(s.wspd)}" stroke="#08131D" stroke-width="2"/>
-    </svg><span class="spd">${wind(s.wspd)}</span>${tagHtml}</div>`;
+  return `<div class="stn${old}">${ripples}${flow}
+    <div ${core}>
+      <svg width="52" height="52" viewBox="0 0 52 52" aria-hidden="true">
+        ${arrow}<circle cx="26" cy="26" r="14" fill="${windColor(s.wspd)}" stroke="#08131D" stroke-width="2"/>
+      </svg><span class="spd">${wind(s.wspd)}</span>
+    </div>${tagHtml}</div>`;
 }
 
 function popupHtml(s) {
@@ -459,8 +532,21 @@ document.getElementById("list").addEventListener("click", (e) => {
   markers[s.id].openPopup();
 });
 
+// Motion: on by default unless the visitor's device asks for reduced motion.
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let motion = loadPref("motion", { on: !reduceMotion }).on;
+function applyMotion() {
+  document.body.classList.toggle("still", !motion);
+  const b = document.getElementById("motion");
+  b.setAttribute("aria-pressed", motion);
+}
+applyMotion();
+document.getElementById("motion").addEventListener("click", () => {
+  motion = !motion; savePref("motion", { on: motion }); applyMotion();
+});
+
 // Reading toggles
-document.querySelectorAll(".chip").forEach(b => {
+document.querySelectorAll(".chip:not(#motion)").forEach(b => {
   b.setAttribute("aria-pressed", show[b.dataset.layer]);
   b.addEventListener("click", () => {
     const k = b.dataset.layer;
