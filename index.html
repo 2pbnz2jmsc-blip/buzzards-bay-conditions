@@ -4,14 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<title>Buzzards Bay wind &amp; waves</title>
+<title>Southern New England wind &amp; waves</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   /*
     Night palette to match the inverted ocean chart:
-    deep navy panels, soft chart ink, and a brightened chart magenta for waves.
+    deep navy panels, soft chart ink, brightened chart magenta for waves,
+    pale gray for gusts and cyan for water temperature.
   */
   :root {
     --night: #0A1622;
@@ -21,6 +22,8 @@
     --muted: #8FA2B3;
     --deep: #9CC6EA;
     --magenta: #E36BB8;
+    --gust: #C9D4DE;
+    --temp: #5CC8E8;
     --rule: #22364A;
     --w0: #2FB5A5; --w1: #7FBF5A; --w2: #E4B83A; --w3: #EE8544; --w4: #E0506A;
   }
@@ -29,7 +32,7 @@
   body {
     background: var(--night); color: var(--ink);
     font: 15px/1.45 "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
-    display: grid; grid-template-columns: 340px 1fr; grid-template-rows: 100%;
+    display: grid; grid-template-columns: 380px 1fr; grid-template-rows: 100%;
     padding-top: env(safe-area-inset-top, 0px);
   }
   #panel {
@@ -43,7 +46,8 @@
     color: var(--deep); letter-spacing: -0.01em;
   }
   .sub { color: var(--muted); margin: 0; font-size: 14px; }
-  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+  .label { font-size: 12px; color: var(--muted); margin: 14px 0 6px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
   .seg button {
     font: inherit; font-size: 13px; background: none; color: var(--ink);
@@ -55,24 +59,42 @@
     font: inherit; font-size: 13px; margin-left: auto; background: none; color: var(--deep);
     border: 1px solid var(--rule); border-radius: 6px; padding: 5px 10px; cursor: pointer;
   }
-  #refresh:hover, .seg button:hover:not([aria-pressed="true"]) { background: var(--panel-hi); }
+  #refresh:hover, .seg button:hover:not([aria-pressed="true"]), .chip:hover { background: var(--panel-hi); }
+
+  /* Layer toggles */
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font: inherit; font-size: 13px; color: var(--muted); background: none; cursor: pointer;
+    border: 1px solid var(--rule); border-radius: 999px; padding: 4px 11px 4px 8px;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chip i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; }
+  .chip[aria-pressed="true"] { color: var(--ink); border-color: var(--muted); }
+  .chip[aria-pressed="true"] i { border-color: transparent; }
+  .chip[data-layer="wind"][aria-pressed="true"] i { background: var(--w1); }
+  .chip[data-layer="gust"][aria-pressed="true"] i { background: var(--gust); }
+  .chip[data-layer="wave"][aria-pressed="true"] i { background: var(--magenta); }
+  .chip[data-layer="temp"][aria-pressed="true"] i { background: var(--temp); }
+
   #status { font-size: 13px; color: var(--muted); padding: 10px 20px; border-bottom: 1px solid var(--rule); }
   #status.err { color: var(--w4); }
   #list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
   #list li { border-bottom: 1px solid var(--rule); }
   #list button {
     all: unset; box-sizing: border-box; width: 100%; cursor: pointer;
-    display: grid; grid-template-columns: 1fr auto auto; gap: 14px; align-items: center;
-    padding: 11px 20px;
+    display: grid; grid-template-columns: 1fr; grid-auto-flow: column; grid-auto-columns: auto;
+    gap: 12px; align-items: center; padding: 11px 20px;
   }
   #list button:hover { background: var(--panel-hi); }
   #list button:focus-visible { outline: 2px solid var(--magenta); outline-offset: -2px; }
   .nm { font-weight: 600; }
   .id { color: var(--muted); font-size: 12px; }
   .stale .nm::after { content: " (old)"; color: var(--muted); font-weight: 400; font-size: 12px; }
-  .val { font-family: "Barlow Condensed", sans-serif; font-size: 20px; font-weight: 600; text-align: right; min-width: 52px; }
-  .val small { font-family: "Barlow", sans-serif; font-size: 11px; color: var(--muted); font-weight: 400; display: block; line-height: 1; }
-  .wave { color: var(--magenta); }
+  .val { font-family: "Barlow Condensed", sans-serif; font-size: 20px; font-weight: 600; text-align: right; min-width: 42px; }
+  .val small { font-family: "Barlow", sans-serif; font-size: 11px; color: var(--muted); font-weight: 400; display: block; line-height: 1; white-space: nowrap; }
+  .val.gust { color: var(--gust); }
+  .val.wave, .wave { color: var(--magenta); }
+  .val.temp { color: var(--temp); }
   .legend { padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--rule); font-size: 12px; color: var(--muted); }
   .scale { display: flex; margin: 6px 0 8px; border-radius: 3px; overflow: hidden; }
   .scale span { flex: 1; height: 8px; }
@@ -89,20 +111,30 @@
   .leaflet-bar a:hover { background: var(--panel-hi) !important; }
   .leaflet-bar { border-color: var(--rule) !important; }
 
-  /* Map markers */
-  .stn { position: relative; }
+  /* Map markers: wind circle at the station, other readings stacked beneath */
+  .stn { position: relative; width: 44px; height: 44px; }
   .stn svg { display: block; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
   .stn .spd {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
     font: 700 13px/1 "Barlow Condensed", sans-serif; color: #08131D; pointer-events: none;
   }
-  .stn .wv {
-    position: absolute; left: 50%; top: 100%; transform: translate(-50%, 2px);
-    background: var(--magenta); color: #1A0716; border-radius: 9px; padding: 1px 7px;
-    font: 700 12px/16px "Barlow Condensed", sans-serif; white-space: nowrap;
+  .stn .pin {
+    position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; transform: translate(-50%, -50%);
+    border-radius: 50%; background: var(--ink); border: 2px solid #08131D;
+  }
+  .stn .tags {
+    position: absolute; left: 50%; top: 100%; transform: translate(-50%, 1px);
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  .stn.nowind .tags { top: 50%; transform: translate(-50%, 8px); }
+  .stn .tags span {
+    border-radius: 9px; padding: 1px 7px; white-space: nowrap;
+    font: 700 12px/16px "Barlow Condensed", sans-serif; color: #08131D;
     box-shadow: 0 1px 3px rgba(0,0,0,.5);
   }
-  .stn.only-wave .wv { top: 50%; transform: translate(-50%, -50%); font-size: 14px; padding: 2px 9px; }
+  .stn .t-gust { background: var(--gust); }
+  .stn .t-wave { background: var(--magenta); color: #1A0716 !important; }
+  .stn .t-temp { background: var(--temp); }
   .stn.old { opacity: .4; }
 
   /* Popups */
@@ -129,16 +161,30 @@
 <body>
 <aside id="panel">
   <header>
-    <h1>Buzzards Bay wind &amp; waves</h1>
+    <h1>Southern New England wind &amp; waves</h1>
     <p class="sub">Latest buoy and shore-station reports from NOAA's National Data Buoy Center.</p>
+
+    <p class="label">Show</p>
+    <div class="chips" role="group" aria-label="Readings to show">
+      <button class="chip" data-layer="wind" aria-pressed="true"><i></i>Wind</button>
+      <button class="chip" data-layer="gust" aria-pressed="true"><i></i>Gusts</button>
+      <button class="chip" data-layer="wave" aria-pressed="true"><i></i>Waves</button>
+      <button class="chip" data-layer="temp" aria-pressed="true"><i></i>Water temp</button>
+    </div>
+
+    <p class="label">Units</p>
     <div class="controls">
       <div class="seg" role="group" aria-label="Wind units">
-        <button data-wind="kt" aria-pressed="true">knots</button>
-        <button data-wind="mph" aria-pressed="false">mph</button>
+        <button data-unit="wind" data-val="kt" aria-pressed="true">kt</button>
+        <button data-unit="wind" data-val="mph" aria-pressed="false">mph</button>
       </div>
       <div class="seg" role="group" aria-label="Wave units">
-        <button data-wave="ft" aria-pressed="true">ft</button>
-        <button data-wave="m" aria-pressed="false">m</button>
+        <button data-unit="wave" data-val="ft" aria-pressed="true">ft</button>
+        <button data-unit="wave" data-val="m" aria-pressed="false">m</button>
+      </div>
+      <div class="seg" role="group" aria-label="Temperature units">
+        <button data-unit="temp" data-val="F" aria-pressed="true">°F</button>
+        <button data-unit="temp" data-val="C" aria-pressed="false">°C</button>
       </div>
       <button id="refresh">Refresh</button>
     </div>
@@ -146,10 +192,12 @@
   <div id="status" role="status">Loading observations…</div>
   <ul id="list"></ul>
   <div class="legend">
-    Wind speed (knots). Arrows point the way the wind is blowing.
-    <div class="scale"><span style="background:var(--w0)"></span><span style="background:var(--w1)"></span><span style="background:var(--w2)"></span><span style="background:var(--w3)"></span><span style="background:var(--w4)"></span></div>
-    <div class="scale-labels"><span>0</span><span>10</span><span>15</span><span>20</span><span>25+</span></div>
-    <p style="margin:10px 0 0"><span class="wave">Magenta tags</span> show significant wave height. Data: <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">NOAA NDBC</a>. Not for navigation.</p>
+    <div id="windLegend">
+      Wind speed (knots). Arrows point the way the wind is blowing.
+      <div class="scale"><span style="background:var(--w0)"></span><span style="background:var(--w1)"></span><span style="background:var(--w2)"></span><span style="background:var(--w3)"></span><span style="background:var(--w4)"></span></div>
+      <div class="scale-labels"><span>0</span><span>10</span><span>15</span><span>20</span><span>25+</span></div>
+    </div>
+    <p style="margin:10px 0 0">Tags under each station show gusts (gray), significant wave height (<span class="wave">magenta</span>) and water temperature (<span style="color:var(--temp)">cyan</span>). Data: <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">NOAA NDBC</a>. Not for navigation.</p>
   </div>
 </aside>
 <div id="map" aria-label="Map of stations"></div>
@@ -161,8 +209,9 @@
 // Your Cloudflare function first; NOAA directly as a fallback (handy for local testing).
 const SOURCES = ["/ndbc", "https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt"];
 
-// Area to show: [south, west, north, east]. Covers Buzzards Bay, Vineyard Sound,
-// the mouth of Narragansett Bay, western Nantucket Sound and Block Island.
+// Area to show: [south, west, north, east]. Covers Massachusetts Bay, Cape Cod Bay,
+// Buzzards Bay, Vineyard and Nantucket Sounds, Narragansett Bay, Rhode Island Sound
+// and Block Island Sound. The starting map view follows this box.
 const BBOX = [40.9, -71.9, 42.7, -69.9];
 
 const REFRESH_MINUTES = 10;
@@ -182,14 +231,24 @@ const NAMES = {
   CPTR1: "Conimicut Light",
   NTKM3: "Nantucket",
   "44090": "Cape Cod Bay",
+  "44013": "Boston approach buoy",
+  "44029": "Massachusetts Bay buoy",
+  BHBM3: "Boston Harbor",
 };
 
-/* ---------------- State ---------------- */
-let units = { wind: "kt", wave: "ft" };
+/* ---------------- State (remembered in this browser) ---------------- */
+function loadPref(key, fallback) {
+  try { const v = JSON.parse(localStorage.getItem(key)); return v && typeof v === "object" ? { ...fallback, ...v } : fallback; }
+  catch { return fallback; }
+}
+function savePref(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
+
+let units = loadPref("units", { wind: "kt", wave: "ft", temp: "F" });
+let show = loadPref("show", { wind: true, gust: true, wave: true, temp: true });
 let stations = [];
 const markers = {};
 
-const map = L.map("map", { zoomControl: true }).setView([41.45, -70.9], 10);
+const map = L.map("map", { zoomControl: true }).fitBounds([[BBOX[0], BBOX[1]], [BBOX[2], BBOX[3]]]);
 L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
   { maxZoom: 13, className: "night-ocean", attribution: "Tiles &copy; Esri, GEBCO, NOAA, Garmin" }
@@ -219,7 +278,7 @@ function parse(text) {
       wvht: num(c[11]), dpd: num(c[12]), mwd: num(c[14]),    // m, s, deg
       atmp: num(c[17]), wtmp: num(c[18]),                    // °C
     };
-    if (s.wspd == null && s.wvht == null) continue; // nothing we display
+    if (s.wspd == null && s.gst == null && s.wvht == null && s.wtmp == null) continue;
     out.push(s);
   }
   return out;
@@ -250,7 +309,8 @@ async function load() {
 const MS_TO = { kt: 1.94384, mph: 2.23694 };
 const wind = (ms) => ms == null ? null : Math.round(ms * MS_TO[units.wind]);
 const wave = (m) => m == null ? null : (units.wave === "ft" ? (m * 3.28084).toFixed(1) : m.toFixed(1));
-const cToF = (c) => c == null ? "–" : `${Math.round(c * 9 / 5 + 32)}°F`;
+const temp = (c) => c == null ? null : Math.round(units.temp === "F" ? c * 9 / 5 + 32 : c);
+const tempStr = (c) => c == null ? "–" : `${temp(c)}°${units.temp}`;
 const compass = (d) => d == null ? "" :
   ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"][Math.round(d / 22.5) % 16];
 const isStale = (s) => (Date.now() - s.time) / 36e5 > STALE_HOURS;
@@ -265,19 +325,37 @@ function windColor(ms) {
 }
 const nameOf = (s) => NAMES[s.id] || `Station ${s.id}`;
 
+// Which of the switched-on readings this station actually has
+function visible(s) {
+  return {
+    wind: show.wind && s.wspd != null,
+    gust: show.gust && s.gst != null,
+    wave: show.wave && s.wvht != null,
+    temp: show.temp && s.wtmp != null,
+  };
+}
+const hasAny = (v) => v.wind || v.gust || v.wave || v.temp;
+
 /* ---------------- Rendering ---------------- */
 function markerHtml(s) {
-  const w = wave(s.wvht);
-  const wv = w != null ? `<span class="wv">${w} ${units.wave}</span>` : "";
-  if (s.wspd == null) return `<div class="stn only-wave${isStale(s) ? " old" : ""}">${wv}</div>`;
+  const v = visible(s);
+  const tags = [];
+  if (v.gust) tags.push(`<span class="t-gust">G ${wind(s.gst)}</span>`);
+  if (v.wave) tags.push(`<span class="t-wave">${wave(s.wvht)} ${units.wave}</span>`);
+  if (v.temp) tags.push(`<span class="t-temp">${temp(s.wtmp)}°</span>`);
+  const tagHtml = tags.length ? `<div class="tags">${tags.join("")}</div>` : "";
+  const old = isStale(s) ? " old" : "";
+
+  if (!v.wind) return `<div class="stn nowind${old}"><span class="pin"></span>${tagHtml}</div>`;
+
   // NDBC direction = where wind comes FROM; rotate 180° so the arrow points downwind.
   const rot = s.wdir == null ? 0 : (s.wdir + 180) % 360;
   const arrow = s.wdir == null ? "" :
     `<path d="M22 2 L29 13 L15 13 Z" fill="${windColor(s.wspd)}" stroke="#08131D" stroke-width="1.5" transform="rotate(${rot} 22 22)"/>`;
-  return `<div class="stn${isStale(s) ? " old" : ""}">
+  return `<div class="stn${old}">
     <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
       ${arrow}<circle cx="22" cy="22" r="11" fill="${windColor(s.wspd)}" stroke="#08131D" stroke-width="2"/>
-    </svg><span class="spd">${wind(s.wspd)}</span>${wv}</div>`;
+    </svg><span class="spd">${wind(s.wspd)}</span>${tagHtml}</div>`;
 }
 
 function popupHtml(s) {
@@ -285,17 +363,38 @@ function popupHtml(s) {
   if (s.wspd != null) rows.push(["Wind", `${wind(s.wspd)} ${units.wind} from ${compass(s.wdir) || "–"}`]);
   if (s.gst != null) rows.push(["Gusts", `${wind(s.gst)} ${units.wind}`]);
   if (s.wvht != null) rows.push(["Waves", `${wave(s.wvht)} ${units.wave}${s.dpd != null ? ` every ${s.dpd} s` : ""}${s.mwd != null ? ` from ${compass(s.mwd)}` : ""}`]);
-  if (s.wtmp != null) rows.push(["Water", cToF(s.wtmp)]);
-  if (s.atmp != null) rows.push(["Air", cToF(s.atmp)]);
+  if (s.wtmp != null) rows.push(["Water", tempStr(s.wtmp)]);
+  if (s.atmp != null) rows.push(["Air", tempStr(s.atmp)]);
   return `<div class="pop"><h2>${nameOf(s)}</h2>
     <div class="meta">${s.id} reported ${fmtTime(s.time)}</div>
     <table>${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("")}</table>
     <a href="https://www.ndbc.noaa.gov/station_page.php?station=${s.id.toLowerCase()}" target="_blank" rel="noopener">Station history on NDBC</a></div>`;
 }
 
+function listValues(s) {
+  const out = [];
+  if (show.wind) out.push(`<span class="val">${s.wspd != null ? wind(s.wspd) : "–"}<small>${units.wind}${s.wdir != null ? " " + compass(s.wdir) : ""}</small></span>`);
+  if (show.gust) out.push(`<span class="val gust">${s.gst != null ? wind(s.gst) : "–"}<small>gusts</small></span>`);
+  if (show.wave) out.push(`<span class="val wave">${s.wvht != null ? wave(s.wvht) : "–"}<small>${units.wave} waves</small></span>`);
+  if (show.temp) out.push(`<span class="val temp">${s.wtmp != null ? temp(s.wtmp) + "°" : "–"}<small>water</small></span>`);
+  return out.join("");
+}
+
+// Sort by the first switched-on reading: wind, then gusts, waves, water temp
+function sortKey(s) {
+  if (show.wind) return s.wspd ?? -1;
+  if (show.gust) return s.gst ?? -1;
+  if (show.wave) return s.wvht ?? -1;
+  if (show.temp) return s.wtmp ?? -99;
+  return 0;
+}
+
 function render() {
   layer.clearLayers();
-  for (const s of stations) {
+  for (const k of Object.keys(markers)) delete markers[k];
+  const shown = stations.filter(s => hasAny(visible(s)));
+
+  for (const s of shown) {
     const m = L.marker([s.lat, s.lon], {
       icon: L.divIcon({ html: markerHtml(s), className: "", iconSize: [44, 44], iconAnchor: [22, 22], popupAnchor: [0, -18] }),
       title: nameOf(s), keyboard: true,
@@ -303,14 +402,17 @@ function render() {
     m.addTo(layer);
     markers[s.id] = m;
   }
+
   const list = document.getElementById("list");
-  const sorted = [...stations].sort((a, b) => (b.wspd ?? -1) - (a.wspd ?? -1));
-  list.innerHTML = sorted.map(s => `
+  const sorted = [...shown].sort((a, b) => sortKey(b) - sortKey(a));
+  list.innerHTML = sorted.length ? sorted.map(s => `
     <li class="${isStale(s) ? "stale" : ""}"><button data-id="${s.id}">
       <span><span class="nm">${nameOf(s)}</span><br><span class="id">${s.id} · ${fmtTime(s.time)}</span></span>
-      <span class="val">${s.wspd != null ? wind(s.wspd) : "–"}<small>${units.wind}${s.wdir != null ? " " + compass(s.wdir) : ""}</small></span>
-      <span class="val wave">${s.wvht != null ? wave(s.wvht) : "–"}<small>${units.wave} waves</small></span>
-    </button></li>`).join("");
+      ${listValues(s)}
+    </button></li>`).join("")
+    : `<li style="padding:14px 20px;color:var(--muted)">Turn on at least one reading above to see stations.</li>`;
+
+  document.getElementById("windLegend").hidden = !show.wind;
 }
 
 function setStatus(msg, err) {
@@ -325,12 +427,31 @@ document.getElementById("list").addEventListener("click", (e) => {
   map.setView([s.lat, s.lon], Math.max(map.getZoom(), 11));
   markers[s.id].openPopup();
 });
-document.querySelectorAll("[data-wind],[data-wave]").forEach(b => b.addEventListener("click", () => {
-  const key = b.dataset.wind ? "wind" : "wave";
-  units[key] = b.dataset[key];
-  document.querySelectorAll(`[data-${key}]`).forEach(x => x.setAttribute("aria-pressed", x === b));
-  render();
-}));
+
+// Reading toggles
+document.querySelectorAll(".chip").forEach(b => {
+  b.setAttribute("aria-pressed", show[b.dataset.layer]);
+  b.addEventListener("click", () => {
+    const k = b.dataset.layer;
+    show[k] = !show[k];
+    b.setAttribute("aria-pressed", show[k]);
+    savePref("show", show);
+    render();
+  });
+});
+
+// Unit switches
+document.querySelectorAll("[data-unit]").forEach(b => {
+  b.setAttribute("aria-pressed", units[b.dataset.unit] === b.dataset.val);
+  b.addEventListener("click", () => {
+    const k = b.dataset.unit;
+    units[k] = b.dataset.val;
+    document.querySelectorAll(`[data-unit="${k}"]`).forEach(x => x.setAttribute("aria-pressed", x === b));
+    savePref("units", units);
+    render();
+  });
+});
+
 document.getElementById("refresh").addEventListener("click", load);
 
 load();
