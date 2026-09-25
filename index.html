@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Buzzards Bay wind &amp; waves</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /*
+    Palette borrowed from NOAA nautical charts:
+    chart paper, sounding blues, and the magenta used for buoys and lights.
+  */
+  :root {
+    --paper: #EEF2EC;
+    --panel: #F8FAF6;
+    --ink: #1B2430;
+    --muted: #5B6875;
+    --shoal: #CFE0EC;
+    --deep: #1F3A5F;
+    --magenta: #A8267A;
+    --rule: #D5DDD6;
+    --w0: #2A9D8F; --w1: #6FA84F; --w2: #D9A826; --w3: #E07B39; --w4: #C73E55;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #101A24; --panel: #15212D; --ink: #E4EAF0; --muted: #93A2B1;
+      --shoal: #203447; --deep: #9CC3E6; --magenta: #E070B8; --rule: #26384A;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font: 15px/1.45 "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: grid; grid-template-columns: 340px 1fr; grid-template-rows: 100%;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  #panel {
+    background: var(--panel); border-right: 1px solid var(--rule);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  header { padding: 20px 20px 14px; border-bottom: 1px solid var(--rule); }
+  h1 {
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    font-weight: 700; font-size: 30px; line-height: 1; margin: 0 0 6px;
+    color: var(--deep); letter-spacing: -0.01em;
+  }
+  .sub { color: var(--muted); margin: 0; font-size: 14px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+  .seg button {
+    font: inherit; font-size: 13px; background: none; color: var(--ink);
+    border: 0; padding: 5px 10px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--deep); color: var(--panel); }
+  button:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
+  #refresh {
+    font: inherit; font-size: 13px; margin-left: auto; background: none; color: var(--deep);
+    border: 1px solid var(--rule); border-radius: 6px; padding: 5px 10px; cursor: pointer;
+  }
+  #status { font-size: 13px; color: var(--muted); padding: 10px 20px; border-bottom: 1px solid var(--rule); }
+  #status.err { color: var(--w4); }
+  #list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+  #list li { border-bottom: 1px solid var(--rule); }
+  #list button {
+    all: unset; box-sizing: border-box; width: 100%; cursor: pointer;
+    display: grid; grid-template-columns: 1fr auto auto; gap: 14px; align-items: center;
+    padding: 11px 20px;
+  }
+  #list button:hover { background: var(--shoal); }
+  #list button:focus-visible { outline: 2px solid var(--magenta); outline-offset: -2px; }
+  .nm { font-weight: 600; }
+  .id { color: var(--muted); font-size: 12px; }
+  .stale .nm::after { content: " (old)"; color: var(--muted); font-weight: 400; font-size: 12px; }
+  .val { font-family: "Barlow Condensed", sans-serif; font-size: 20px; font-weight: 600; text-align: right; min-width: 52px; }
+  .val small { font-family: "Barlow", sans-serif; font-size: 11px; color: var(--muted); font-weight: 400; display: block; line-height: 1; }
+  .wave { color: var(--magenta); }
+  .legend { padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--rule); font-size: 12px; color: var(--muted); }
+  .scale { display: flex; margin: 6px 0 8px; border-radius: 3px; overflow: hidden; }
+  .scale span { flex: 1; height: 8px; }
+  .scale-labels { display: flex; justify-content: space-between; }
+  .legend a { color: var(--deep); }
+  #map { height: 100%; background: var(--shoal); }
+
+  /* Map markers */
+  .stn { position: relative; }
+  .stn svg { display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
+  .stn .spd {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    font: 700 13px/1 "Barlow Condensed", sans-serif; color: #fff; pointer-events: none;
+  }
+  .stn .wv {
+    position: absolute; left: 50%; top: 100%; transform: translate(-50%, 2px);
+    background: var(--magenta); color: #fff; border-radius: 9px; padding: 1px 7px;
+    font: 600 12px/16px "Barlow Condensed", sans-serif; white-space: nowrap;
+  }
+  .stn.only-wave .wv { top: 50%; transform: translate(-50%, -50%); font-size: 14px; padding: 2px 9px; }
+  .stn.old { opacity: .45; }
+  .leaflet-popup-content { font: 14px/1.45 "Barlow", sans-serif; margin: 12px 14px; }
+  .pop h2 { font: 700 19px/1.1 "Barlow Condensed", sans-serif; margin: 0 0 2px; color: #1F3A5F; }
+  .pop table { border-collapse: collapse; margin: 8px 0; }
+  .pop td { padding: 2px 12px 2px 0; }
+  .pop td:first-child { color: #5B6875; }
+
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; overflow: auto; height: auto; }
+    #map { grid-row: 1; height: 55vh; }
+    #panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--rule); }
+    #list { overflow: visible; }
+  }
+  @media (prefers-reduced-motion: reduce) { .leaflet-zoom-anim .leaflet-zoom-animated { transition: none !important; } }
+</style>
+</head>
+<body>
+<aside id="panel">
+  <header>
+    <h1>Buzzards Bay wind &amp; waves</h1>
+    <p class="sub">Latest buoy and shore-station reports from NOAA's National Data Buoy Center.</p>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Wind units">
+        <button data-wind="kt" aria-pressed="true">knots</button>
+        <button data-wind="mph" aria-pressed="false">mph</button>
+      </div>
+      <div class="seg" role="group" aria-label="Wave units">
+        <button data-wave="ft" aria-pressed="true">ft</button>
+        <button data-wave="m" aria-pressed="false">m</button>
+      </div>
+      <button id="refresh">Refresh</button>
+    </div>
+  </header>
+  <div id="status" role="status">Loading observations…</div>
+  <ul id="list"></ul>
+  <div class="legend">
+    Wind speed (knots) — arrows point the way the wind is blowing
+    <div class="scale"><span style="background:var(--w0)"></span><span style="background:var(--w1)"></span><span style="background:var(--w2)"></span><span style="background:var(--w3)"></span><span style="background:var(--w4)"></span></div>
+    <div class="scale-labels"><span>0</span><span>10</span><span>15</span><span>20</span><span>25+</span></div>
+    <p style="margin:10px 0 0"><span class="wave">Magenta tags</span> show significant wave height. Data: <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">NOAA NDBC</a>. Not for navigation.</p>
+  </div>
+</aside>
+<div id="map" aria-label="Map of stations"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ---------------- Settings ---------------- */
+
+// NDBC publishes every station's most recent report in one text file.
+const DATA_URL = "/ndbc";
+
+// If the browser blocks the direct request (CORS), put a proxy URL here.
+// The data URL is appended, URL-encoded. Example: "https://your-worker.example.workers.dev/?url="
+const PROXY = "";
+
+// Area to show: [south, west, north, east]. Covers Buzzards Bay, Vineyard Sound,
+// the mouth of Narragansett Bay, western Nantucket Sound and Block Island.
+const BBOX = [40.9, -71.6, 41.8, -70.2];
+
+const REFRESH_MINUTES = 10;
+const STALE_HOURS = 3;
+
+// Friendly names; any other station inside BBOX still appears, labeled by ID.
+const NAMES = {
+  BUZM3: "Buzzards Bay entrance tower",
+  "44085": "Buzzards Bay buoy",
+  BZBM3: "Woods Hole",
+  NBGM3: "New Bedford barrier",
+  FRVM3: "Fall River",
+  "44020": "Nantucket Sound",
+  "44097": "Block Island",
+  NWPR1: "Newport",
+  QPTR1: "Quonset Point",
+  CPTR1: "Conimicut Light",
+  NTKM3: "Nantucket",
+  "44090": "Cape Cod Bay",
+};
+
+/* ---------------- State ---------------- */
+let units = { wind: "kt", wave: "ft" };
+let stations = [];
+const markers = {};
+
+const map = L.map("map", { zoomControl: true }).setView([41.45, -70.9], 10);
+L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
+  { maxZoom: 13, attribution: "Tiles &copy; Esri, GEBCO, NOAA, Garmin" }
+).addTo(map);
+L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}",
+  { maxZoom: 13 }
+).addTo(map);
+const layer = L.layerGroup().addTo(map);
+
+/* ---------------- Data ---------------- */
+function num(v) { return v === undefined || v === "MM" ? null : Number(v); }
+
+function parse(text) {
+  // Columns: STN LAT LON YYYY MM DD hh mm WDIR WSPD GST WVHT DPD APD MWD PRES PTDY ATMP WTMP DEWP VIS TIDE
+  const out = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim() || line.startsWith("#")) continue;
+    const c = line.trim().split(/\s+/);
+    const lat = num(c[1]), lon = num(c[2]);
+    if (lat == null || lon == null) continue;
+    if (lat < BBOX[0] || lat > BBOX[2] || lon < BBOX[1] || lon > BBOX[3]) continue;
+    const s = {
+      id: c[0], lat, lon,
+      time: new Date(Date.UTC(+c[3], +c[4] - 1, +c[5], +c[6], +c[7])),
+      wdir: num(c[8]), wspd: num(c[9]), gst: num(c[10]),     // m/s
+      wvht: num(c[11]), dpd: num(c[12]), mwd: num(c[14]),    // m, s, deg
+      atmp: num(c[17]), wtmp: num(c[18]),                    // °C
+    };
+    if (s.wspd == null && s.wvht == null) continue; // nothing we display
+    out.push(s);
+  }
+  return out;
+}
+
+async function getText(url) {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.text();
+}
+
+async function load() {
+  setStatus("Loading observations…");
+  try {
+    let text;
+    try { text = await getText(DATA_URL); }
+    catch (e) {
+      if (!PROXY) throw e;
+      text = await getText(PROXY + encodeURIComponent(DATA_URL));
+    }
+    stations = parse(text);
+    render();
+    const newest = stations.reduce((a, s) => (s.time > a ? s.time : a), new Date(0));
+    setStatus(stations.length
+      ? `${stations.length} stations. Newest report ${fmtTime(newest)}. Updates every ${REFRESH_MINUTES} min.`
+      : "No stations reported inside the map area. Widen BBOX in the settings.");
+  } catch (e) {
+    setStatus("Couldn't reach NOAA's data file. If your browser console shows a CORS error, set PROXY at the top of the script. Details: " + e.message, true);
+  }
+}
+
+/* ---------------- Formatting ---------------- */
+const MS_TO = { kt: 1.94384, mph: 2.23694 };
+const wind = (ms) => ms == null ? null : Math.round(ms * MS_TO[units.wind]);
+const wave = (m) => m == null ? null : (units.wave === "ft" ? (m * 3.28084).toFixed(1) : m.toFixed(1));
+const cToF = (c) => c == null ? "–" : `${Math.round(c * 9 / 5 + 32)}°F`;
+const compass = (d) => d == null ? "" :
+  ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"][Math.round(d / 22.5) % 16];
+const isStale = (s) => (Date.now() - s.time) / 36e5 > STALE_HOURS;
+function fmtTime(d) {
+  const mins = Math.round((Date.now() - d) / 6e4);
+  const clock = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return mins < 90 ? `${clock} (${mins} min ago)` : `${d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+}
+function windColor(ms) {
+  const kt = ms * 1.94384;
+  return kt < 10 ? "var(--w0)" : kt < 15 ? "var(--w1)" : kt < 20 ? "var(--w2)" : kt < 25 ? "var(--w3)" : "var(--w4)";
+}
+const nameOf = (s) => NAMES[s.id] || `Station ${s.id}`;
+
+/* ---------------- Rendering ---------------- */
+function markerHtml(s) {
+  const w = wave(s.wvht);
+  const wv = w != null ? `<span class="wv">${w} ${units.wave}</span>` : "";
+  if (s.wspd == null) return `<div class="stn only-wave${isStale(s) ? " old" : ""}">${wv}</div>`;
+  // NDBC direction = where wind comes FROM; rotate 180° so the arrow points downwind.
+  const rot = s.wdir == null ? 0 : (s.wdir + 180) % 360;
+  const arrow = s.wdir == null ? "" :
+    `<path d="M22 2 L29 13 L15 13 Z" fill="${windColor(s.wspd)}" stroke="#fff" stroke-width="1.5" transform="rotate(${rot} 22 22)"/>`;
+  return `<div class="stn${isStale(s) ? " old" : ""}">
+    <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+      ${arrow}<circle cx="22" cy="22" r="11" fill="${windColor(s.wspd)}" stroke="#fff" stroke-width="2"/>
+    </svg><span class="spd">${wind(s.wspd)}</span>${wv}</div>`;
+}
+
+function popupHtml(s) {
+  const rows = [];
+  if (s.wspd != null) rows.push(["Wind", `${wind(s.wspd)} ${units.wind} from ${compass(s.wdir) || "–"}`]);
+  if (s.gst != null) rows.push(["Gusts", `${wind(s.gst)} ${units.wind}`]);
+  if (s.wvht != null) rows.push(["Waves", `${wave(s.wvht)} ${units.wave}${s.dpd != null ? ` every ${s.dpd} s` : ""}${s.mwd != null ? ` from ${compass(s.mwd)}` : ""}`]);
+  if (s.wtmp != null) rows.push(["Water", cToF(s.wtmp)]);
+  if (s.atmp != null) rows.push(["Air", cToF(s.atmp)]);
+  return `<div class="pop"><h2>${nameOf(s)}</h2>
+    <div style="color:#5B6875;font-size:13px">${s.id} reported ${fmtTime(s.time)}</div>
+    <table>${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("")}</table>
+    <a href="https://www.ndbc.noaa.gov/station_page.php?station=${s.id.toLowerCase()}" target="_blank" rel="noopener">Station history on NDBC</a></div>`;
+}
+
+function render() {
+  layer.clearLayers();
+  for (const s of stations) {
+    const m = L.marker([s.lat, s.lon], {
+      icon: L.divIcon({ html: markerHtml(s), className: "", iconSize: [44, 44], iconAnchor: [22, 22], popupAnchor: [0, -18] }),
+      title: nameOf(s), keyboard: true,
+    }).bindPopup(popupHtml(s));
+    m.addTo(layer);
+    markers[s.id] = m;
+  }
+  const list = document.getElementById("list");
+  const sorted = [...stations].sort((a, b) => (b.wspd ?? -1) - (a.wspd ?? -1));
+  list.innerHTML = sorted.map(s => `
+    <li class="${isStale(s) ? "stale" : ""}"><button data-id="${s.id}">
+      <span><span class="nm">${nameOf(s)}</span><br><span class="id">${s.id} · ${fmtTime(s.time)}</span></span>
+      <span class="val">${s.wspd != null ? wind(s.wspd) : "–"}<small>${units.wind}${s.wdir != null ? " " + compass(s.wdir) : ""}</small></span>
+      <span class="val wave">${s.wvht != null ? wave(s.wvht) : "–"}<small>${units.wave} waves</small></span>
+    </button></li>`).join("");
+}
+
+function setStatus(msg, err) {
+  const el = document.getElementById("status");
+  el.textContent = msg; el.classList.toggle("err", !!err);
+}
+
+/* ---------------- Events ---------------- */
+document.getElementById("list").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-id]"); if (!b) return;
+  const s = stations.find(x => x.id === b.dataset.id);
+  map.setView([s.lat, s.lon], Math.max(map.getZoom(), 11));
+  markers[s.id].openPopup();
+});
+document.querySelectorAll("[data-wind],[data-wave]").forEach(b => b.addEventListener("click", () => {
+  const key = b.dataset.wind ? "wind" : "wave";
+  units[key] = b.dataset[key];
+  document.querySelectorAll(`[data-${key}]`).forEach(x => x.setAttribute("aria-pressed", x === b));
+  render();
+}));
+document.getElementById("refresh").addEventListener("click", load);
+
+load();
+setInterval(load, REFRESH_MINUTES * 60 * 1000);
+</script>
+</body>
+</html>
