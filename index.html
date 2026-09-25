@@ -251,7 +251,33 @@ let show = loadPref("show", { wind: true, gust: true, wave: true, temp: true });
 let stations = [];
 const markers = {};
 
-const map = L.map("map", { zoomControl: true }).fitBounds([[BBOX[0], BBOX[1]], [BBOX[2], BBOX[3]]]);
+// zoomSnap 0.25 lets the map settle between whole zoom levels, so the stations fill more of the screen.
+const map = L.map("map", { zoomControl: true, zoomSnap: 0.25 }).fitBounds([[BBOX[0], BBOX[1]], [BBOX[2], BBOX[3]]]);
+let fittedOnce = false;
+
+// Zoom to the stations currently on the map. Extra bottom/right padding leaves room
+// for the tags that hang below each marker.
+function fitToStations() {
+  const pts = stations.filter(s => hasAny(visible(s))).map(s => [s.lat, s.lon]);
+  if (!pts.length) return;
+  map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 40], paddingBottomRight: [70, 90], maxZoom: 12 });
+}
+
+// "Fit stations" button under the zoom controls
+const FitControl = L.Control.extend({
+  options: { position: "topleft" },
+  onAdd() {
+    const bar = L.DomUtil.create("div", "leaflet-bar");
+    const a = L.DomUtil.create("a", "", bar);
+    a.href = "#"; a.title = "Fit all stations"; a.setAttribute("role", "button");
+    a.setAttribute("aria-label", "Fit all stations"); a.innerHTML = "&#x2922;";
+    a.style.fontSize = "18px";
+    L.DomEvent.on(a, "click", (e) => { L.DomEvent.preventDefault(e); fitToStations(); });
+    L.DomEvent.disableClickPropagation(bar);
+    return bar;
+  },
+});
+new FitControl().addTo(map);
 L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
   { maxZoom: 13, className: "night-ocean", attribution: "Tiles &copy; Esri, GEBCO, NOAA, Garmin" }
@@ -298,6 +324,8 @@ async function load() {
       if (!text.includes("#STN")) throw new Error(`Unexpected response from ${url}`);
       stations = parse(text);
       render();
+      // Only zoom automatically on the first load, so refreshes don't move the map under you.
+      if (!fittedOnce) { fitToStations(); fittedOnce = true; }
       const newest = stations.reduce((a, s) => (s.time > a ? s.time : a), new Date(0));
       setStatus(stations.length
         ? `${stations.length} stations. Newest report ${fmtTime(newest)}. Updates every ${REFRESH_MINUTES} min.`
