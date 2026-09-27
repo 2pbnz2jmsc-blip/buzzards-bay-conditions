@@ -24,6 +24,7 @@
     --magenta: #E36BB8;
     --gust: #C9D4DE;
     --temp: #5CC8E8;
+    --advisory: #F2B233;
     --rule: #22364A;
     /* Marker text sizes: raise or lower these to taste */
     --mk-num: 17px;   /* wind speed inside the circle */
@@ -38,17 +39,26 @@
     display: grid; grid-template-columns: 380px 1fr; grid-template-rows: 100%;
     padding-top: env(safe-area-inset-top, 0px);
   }
+  body.collapsed { grid-template-columns: 1fr; }
+  body.collapsed #panel { display: none; }
+
   #panel {
     background: var(--panel); border-right: 1px solid var(--rule);
-    display: flex; flex-direction: column; min-height: 0;
+    min-height: 0; overflow-y: auto;
   }
-  header { padding: 20px 20px 14px; border-bottom: 1px solid var(--rule); }
+  header { padding: 20px 20px 14px; border-bottom: 1px solid var(--rule); position: relative; }
   h1 {
     font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
     font-weight: 700; font-size: 30px; line-height: 1; margin: 0 0 6px;
-    color: var(--deep); letter-spacing: -0.01em;
+    color: var(--deep); letter-spacing: -0.01em; padding-right: 40px;
   }
   .sub { color: var(--muted); margin: 0; font-size: 14px; }
+  #hidePanel {
+    position: absolute; top: 16px; right: 14px; width: 34px; height: 34px;
+    background: none; border: 1px solid var(--rule); border-radius: 6px;
+    color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer;
+  }
+  #hidePanel:hover { background: var(--panel-hi); color: var(--ink); }
   .label { font-size: 12px; color: var(--muted); margin: 14px 0 6px; }
   .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
@@ -57,14 +67,14 @@
     border: 0; padding: 5px 10px; cursor: pointer;
   }
   .seg button[aria-pressed="true"] { background: var(--deep); color: var(--night); font-weight: 600; }
-  button:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
+  button:focus-visible, summary:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
   #refresh {
     font: inherit; font-size: 13px; margin-left: auto; background: none; color: var(--deep);
     border: 1px solid var(--rule); border-radius: 6px; padding: 5px 10px; cursor: pointer;
   }
   #refresh:hover, .seg button:hover:not([aria-pressed="true"]), .chip:hover { background: var(--panel-hi); }
 
-  /* Layer toggles */
+  /* Reading toggles */
   .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .chip {
     font: inherit; font-size: 13px; color: var(--muted); background: none; cursor: pointer;
@@ -79,9 +89,39 @@
   .chip[data-layer="wave"][aria-pressed="true"] i { background: var(--magenta); }
   .chip[data-layer="temp"][aria-pressed="true"] i { background: var(--temp); }
 
+  /* Marine forecast */
+  #forecast { border-bottom: 1px solid var(--rule); }
+  #forecast summary {
+    list-style: none; cursor: pointer; padding: 14px 20px 10px;
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  #forecast summary::-webkit-details-marker { display: none; }
+  #forecast summary h2 {
+    font: 700 20px/1.1 "Barlow Condensed", sans-serif; color: var(--deep); margin: 0; flex: 1;
+  }
+  #forecast summary .chev { color: var(--muted); font-size: 12px; transition: transform .15s; }
+  #forecast[open] summary .chev { transform: rotate(180deg); }
+  .fc-body { padding: 0 20px 14px; }
+  .fc-issued { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+  .fc-adv {
+    border: 1px solid var(--advisory); color: var(--advisory); border-radius: 6px;
+    padding: 6px 10px; font-weight: 600; font-size: 13px; margin: 0 0 10px;
+  }
+  .fc-period { margin: 0 0 10px; }
+  .fc-period h3 { font: 600 15px/1.2 "Barlow Condensed", sans-serif; margin: 0 0 2px; color: var(--ink); letter-spacing: .02em; }
+  .fc-period p { margin: 0; font-size: 14px; color: var(--ink); }
+  .fc-period .detail { color: var(--muted); font-size: 13px; }
+  .fc-more[hidden] { display: none; }
+  .fc-toggle {
+    font: inherit; font-size: 13px; background: none; border: 0; padding: 0; cursor: pointer; color: var(--deep);
+  }
+  .fc-foot { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+  .fc-foot a { color: var(--deep); }
+  .fc-err { color: var(--muted); font-size: 13px; }
+
   #status { font-size: 13px; color: var(--muted); padding: 10px 20px; border-bottom: 1px solid var(--rule); }
   #status.err { color: var(--w4); }
-  #list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+  #list { list-style: none; margin: 0; padding: 0; }
   #list li { border-bottom: 1px solid var(--rule); }
   #list button {
     all: unset; box-sizing: border-box; width: 100%; cursor: pointer;
@@ -98,7 +138,7 @@
   .val.gust { color: var(--gust); }
   .val.wave, .wave { color: var(--magenta); }
   .val.temp { color: var(--temp); }
-  .legend { padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--rule); font-size: 12px; color: var(--muted); }
+  .legend { padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px)); font-size: 12px; color: var(--muted); }
   .scale { display: flex; margin: 6px 0 8px; border-radius: 3px; overflow: hidden; }
   .scale span { flex: 1; height: 8px; }
   .scale-labels { display: flex; justify-content: space-between; }
@@ -113,6 +153,9 @@
   .leaflet-bar a { background: var(--panel) !important; color: var(--ink) !important; border-color: var(--rule) !important; }
   .leaflet-bar a:hover { background: var(--panel-hi) !important; }
   .leaflet-bar { border-color: var(--rule) !important; }
+  .show-panel { display: none; }
+  body.collapsed .show-panel { display: block; }
+  .show-panel a { width: auto !important; padding: 0 12px; font: 600 14px/30px "Barlow", sans-serif; }
 
   /* Map markers: wind circle at the station, other readings stacked beneath */
   .stn { position: relative; width: 52px; height: 52px; }
@@ -140,46 +183,6 @@
   .stn .t-temp { background: var(--temp); }
   .stn.old { opacity: .4; }
 
-  /* ---------- Data-driven animations ---------- */
-  /* Wave ripples: size from wave height, timing from the buoy's wave period */
-  .stn .ripple {
-    position: absolute; left: 50%; top: 50%; width: var(--size); height: var(--size);
-    border: 2px solid var(--magenta); border-radius: 50%; pointer-events: none;
-    transform: translate(-50%, -50%) scale(.25); opacity: 0;
-    animation: ripple var(--dur) ease-out infinite;
-  }
-  .stn .ripple + .ripple { animation-delay: calc(var(--dur) / -2); }
-  @keyframes ripple {
-    0%   { transform: translate(-50%, -50%) scale(.25); opacity: .85; }
-    100% { transform: translate(-50%, -50%) scale(1);   opacity: 0; }
-  }
-  /* Wind chevrons: stream downwind, faster in stronger wind */
-  .stn .flow { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform: rotate(var(--rot)); pointer-events: none; }
-  .stn .flow i {
-    position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; opacity: 0;
-    animation: flow var(--fdur) linear infinite;
-  }
-  .stn .flow i:nth-child(2) { animation-delay: calc(var(--fdur) / -3); }
-  .stn .flow i:nth-child(3) { animation-delay: calc(var(--fdur) / -1.5); }
-  .stn .flow svg { display: block; overflow: visible; filter: drop-shadow(0 0 2px rgba(0,0,0,.7)); }
-  @keyframes flow {
-    0%   { transform: translateY(-27px); opacity: 0; }
-    20%  { opacity: .95; }
-    100% { transform: translateY(-62px); opacity: 0; }
-  }
-  /* Gust pulse: the wind circle swells, more for gustier stations */
-  .stn .core { position: absolute; inset: 0; }
-  .stn .core.gusty { animation: gust 3.2s ease-in-out infinite; animation-delay: var(--delay); }
-  @keyframes gust {
-    0%, 62%, 100% { transform: scale(1); }
-    72% { transform: scale(calc(1 + var(--amp))); }
-    84% { transform: scale(1); }
-  }
-  /* Motion off (button, or the visitor's reduce-motion setting) */
-  body.still .stn .ripple, body.still .stn .flow { display: none; }
-  body.still .stn .core { animation: none; }
-  .chip[data-layer="motion"][aria-pressed="true"] i { background: var(--deep); }
-
   /* Popups */
   .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--ink); box-shadow: 0 4px 18px rgba(0,0,0,.6); }
   .leaflet-popup-content-wrapper { border: 1px solid var(--rule); border-radius: 10px; }
@@ -195,10 +198,10 @@
   @media (max-width: 760px) {
     body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; overflow: auto; height: auto; }
     #map { grid-row: 1; height: 55vh; }
-    #panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--rule); }
-    #list { overflow: visible; }
+    #panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--rule); overflow: visible; }
+    body.collapsed { grid-template-rows: 100%; height: 100%; overflow: hidden; }
+    body.collapsed #map { height: 100%; }
   }
-  @media (prefers-reduced-motion: reduce) { .leaflet-zoom-anim .leaflet-zoom-animated { transition: none !important; } }
 </style>
 </head>
 <body>
@@ -206,6 +209,7 @@
   <header>
     <h1>Southern New England wind &amp; waves</h1>
     <p class="sub">Latest buoy and shore-station reports from NOAA's National Data Buoy Center.</p>
+    <button id="hidePanel" aria-label="Hide sidebar" title="Hide sidebar">&laquo;</button>
 
     <p class="label">Show</p>
     <div class="chips" role="group" aria-label="Readings to show">
@@ -213,7 +217,6 @@
       <button class="chip" data-layer="gust" aria-pressed="true"><i></i>Gusts</button>
       <button class="chip" data-layer="wave" aria-pressed="true"><i></i>Waves</button>
       <button class="chip" data-layer="temp" aria-pressed="true"><i></i>Water temp</button>
-      <button class="chip" data-layer="motion" id="motion" aria-pressed="true"><i></i>Motion</button>
     </div>
 
     <p class="label">Units</p>
@@ -233,6 +236,12 @@
       <button id="refresh">Refresh</button>
     </div>
   </header>
+
+  <details id="forecast" open>
+    <summary><h2>Buzzards Bay marine forecast</h2><span class="chev" aria-hidden="true">▼</span></summary>
+    <div class="fc-body" id="fcBody"><p class="fc-err">Loading forecast…</p></div>
+  </details>
+
   <div id="status" role="status">Loading observations…</div>
   <ul id="list"></ul>
   <div class="legend">
@@ -241,7 +250,7 @@
       <div class="scale"><span style="background:var(--w0)"></span><span style="background:var(--w1)"></span><span style="background:var(--w2)"></span><span style="background:var(--w3)"></span><span style="background:var(--w4)"></span></div>
       <div class="scale-labels"><span>0</span><span>10</span><span>15</span><span>20</span><span>25+</span></div>
     </div>
-    <p style="margin:10px 0 0">Tags under each station show gusts (gray), significant wave height (<span class="wave">magenta</span>) and water temperature (<span style="color:var(--temp)">cyan</span>). Ripples follow each buoy's wave height and period, chevrons stream faster in stronger wind, and circles pulse at gusty stations. Data: <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">NOAA NDBC</a>. Not for navigation.</p>
+    <p style="margin:10px 0 0">Tags under each station show gusts (gray), significant wave height (<span class="wave">magenta</span>) and water temperature (<span style="color:var(--temp)">cyan</span>). Data: <a href="https://www.ndbc.noaa.gov/" target="_blank" rel="noopener">NOAA NDBC</a> and the <a href="https://www.weather.gov/box/" target="_blank" rel="noopener">National Weather Service</a>. Not for navigation.</p>
   </div>
 </aside>
 <div id="map" aria-label="Map of stations"></div>
@@ -253,12 +262,22 @@
 // Your Cloudflare function first; NOAA directly as a fallback (handy for local testing).
 const SOURCES = ["/ndbc", "https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt"];
 
+// NWS coastal waters zone for the sidebar forecast. ANZ234 = Buzzards Bay.
+// Others nearby: anz233 Vineyard Sound, anz235 Rhode Island Sound, anz230 Boston Harbor.
+const FORECAST_ZONE = "anz234";
+const FORECAST_SOURCES = [
+  `/forecast?zone=${FORECAST_ZONE}`,
+  `https://tgftp.nws.noaa.gov/data/forecasts/marine/coastal/an/${FORECAST_ZONE}.txt`,
+];
+const FORECAST_PERIODS_SHOWN = 3;   // more periods appear behind "Show full forecast"
+
 // Area to show: [south, west, north, east]. Covers Massachusetts Bay, Cape Cod Bay,
 // Buzzards Bay, Vineyard and Nantucket Sounds, Narragansett Bay, Rhode Island Sound
 // and Block Island Sound. The starting map view follows this box.
 const BBOX = [40.9, -71.9, 42.7, -69.9];
 
 const REFRESH_MINUTES = 10;
+const FORECAST_REFRESH_MINUTES = 30;
 const STALE_HOURS = 3;
 
 // Friendly names; any other station inside BBOX still appears, labeled by ID.
@@ -289,36 +308,13 @@ function savePref(key, value) { try { localStorage.setItem(key, JSON.stringify(v
 
 let units = loadPref("units", { wind: "kt", wave: "ft", temp: "F" });
 let show = loadPref("show", { wind: true, gust: true, wave: true, temp: true });
+let panel = loadPref("panel", { hidden: false });
 let stations = [];
 const markers = {};
 
 // zoomSnap 0.25 lets the map settle between whole zoom levels, so the stations fill more of the screen.
 const map = L.map("map", { zoomControl: true, zoomSnap: 0.25 }).fitBounds([[BBOX[0], BBOX[1]], [BBOX[2], BBOX[3]]]);
 let fittedOnce = false;
-
-// Zoom to the stations currently on the map. Extra bottom/right padding leaves room
-// for the tags that hang below each marker.
-function fitToStations() {
-  const pts = stations.filter(s => hasAny(visible(s))).map(s => [s.lat, s.lon]);
-  if (!pts.length) return;
-  map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 40], paddingBottomRight: [70, 90], maxZoom: 12 });
-}
-
-// "Fit stations" button under the zoom controls
-const FitControl = L.Control.extend({
-  options: { position: "topleft" },
-  onAdd() {
-    const bar = L.DomUtil.create("div", "leaflet-bar");
-    const a = L.DomUtil.create("a", "", bar);
-    a.href = "#"; a.title = "Fit all stations"; a.setAttribute("role", "button");
-    a.setAttribute("aria-label", "Fit all stations"); a.innerHTML = "&#x2922;";
-    a.style.fontSize = "18px";
-    L.DomEvent.on(a, "click", (e) => { L.DomEvent.preventDefault(e); fitToStations(); });
-    L.DomEvent.disableClickPropagation(bar);
-    return bar;
-  },
-});
-new FitControl().addTo(map);
 L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
   { maxZoom: 13, className: "night-ocean", attribution: "Tiles &copy; Esri, GEBCO, NOAA, Garmin" }
@@ -329,7 +325,46 @@ L.tileLayer(
 ).addTo(map);
 const layer = L.layerGroup().addTo(map);
 
-/* ---------------- Data ---------------- */
+// Zoom to the stations currently on the map. Extra bottom/right padding leaves room
+// for the tags that hang below each marker.
+function fitToStations() {
+  const pts = stations.filter(s => hasAny(visible(s))).map(s => [s.lat, s.lon]);
+  if (!pts.length) return;
+  map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 40], paddingBottomRight: [70, 90], maxZoom: 12 });
+}
+
+// Small map buttons
+function mapButton(position, label, title, onClick, extraClass = "") {
+  const Ctl = L.Control.extend({
+    options: { position },
+    onAdd() {
+      const bar = L.DomUtil.create("div", "leaflet-bar " + extraClass);
+      const a = L.DomUtil.create("a", "", bar);
+      a.href = "#"; a.title = title; a.setAttribute("role", "button");
+      a.setAttribute("aria-label", title); a.innerHTML = label;
+      L.DomEvent.on(a, "click", (e) => { L.DomEvent.preventDefault(e); onClick(); });
+      L.DomEvent.disableClickPropagation(bar);
+      return bar;
+    },
+  });
+  return new Ctl().addTo(map);
+}
+mapButton("topleft", '<span style="font-size:18px">&#x2922;</span>', "Fit all stations", fitToStations);
+mapButton("topleft", "&raquo; Sidebar", "Show sidebar", () => setPanel(false), "show-panel");
+
+/* ---------------- Sidebar show/hide ---------------- */
+function setPanel(hidden) {
+  panel.hidden = hidden;
+  document.body.classList.toggle("collapsed", hidden);
+  savePref("panel", panel);
+  map.invalidateSize();
+  if (!hidden) document.getElementById("hidePanel").focus({ preventScroll: true });
+}
+document.getElementById("hidePanel").addEventListener("click", () => setPanel(true));
+document.body.classList.toggle("collapsed", panel.hidden);
+map.invalidateSize();
+
+/* ---------------- Observations ---------------- */
 function num(v) { return v === undefined || v === "MM" ? null : Number(v); }
 
 function parse(text) {
@@ -354,27 +389,96 @@ function parse(text) {
   return out;
 }
 
-async function load() {
-  setStatus("Loading observations…");
+async function fetchFirst(urls, check) {
   let lastErr;
-  for (const url of SOURCES) {
+  for (const url of urls) {
     try {
       const r = await fetch(url, { cache: "no-store" });
       if (!r.ok) throw new Error(`HTTP ${r.status} from ${url}`);
       const text = await r.text();
-      if (!text.includes("#STN")) throw new Error(`Unexpected response from ${url}`);
-      stations = parse(text);
-      render();
-      // Only zoom automatically on the first load, so refreshes don't move the map under you.
-      if (!fittedOnce) { fitToStations(); fittedOnce = true; }
-      const newest = stations.reduce((a, s) => (s.time > a ? s.time : a), new Date(0));
-      setStatus(stations.length
-        ? `${stations.length} stations. Newest report ${fmtTime(newest)}. Updates every ${REFRESH_MINUTES} min.`
-        : "No stations reported inside the map area. Widen BBOX in the settings.");
-      return;
+      if (!check(text)) throw new Error(`Unexpected response from ${url}`);
+      return text;
     } catch (e) { lastErr = e; }
   }
-  setStatus("Couldn't reach NOAA's data. Check that /ndbc on your site returns text starting with #STN. Details: " + (lastErr ? lastErr.message : "unknown"), true);
+  throw lastErr || new Error("No sources");
+}
+
+async function load() {
+  setStatus("Loading observations…");
+  try {
+    const text = await fetchFirst(SOURCES, t => t.includes("#STN"));
+    stations = parse(text);
+    render();
+    // Only zoom automatically on the first load, so refreshes don't move the map under you.
+    if (!fittedOnce) { fitToStations(); fittedOnce = true; }
+    const newest = stations.reduce((a, s) => (s.time > a ? s.time : a), new Date(0));
+    setStatus(stations.length
+      ? `${stations.length} stations. Newest report ${fmtTime(newest)}. Updates every ${REFRESH_MINUTES} min.`
+      : "No stations reported inside the map area. Widen BBOX in the settings.");
+  } catch (e) {
+    setStatus("Couldn't reach NOAA's data. Check that /ndbc on your site returns text starting with #STN. Details: " + e.message, true);
+  }
+}
+
+/* ---------------- Marine forecast ---------------- */
+const esc = (t) => t.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const titleCase = (t) => t.toLowerCase().replace(/(^|\s)\S/g, m => m.toUpperCase()).replace(/\b(Night|And|Through)\b/g, w => w.toLowerCase());
+
+// "SMALL CRAFT ADVISORY IN EFFECT UNTIL 6 PM EDT" -> "Small craft advisory in effect until 6 PM EDT"
+const sentenceCase = (t) => (t.charAt(0) + t.slice(1).toLowerCase())
+  .replace(/\b(am|pm|edt|est|nm|kt)\b/g, w => w.toUpperCase())
+  .replace(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/g, w => w[0].toUpperCase() + w.slice(1));
+
+function parseForecast(text) {
+  const body = text.split("$$")[0];
+  const lines = body.split("\n").map(l => l.trim());
+  const issued = lines.find(l => /^\d{3,4} (AM|PM) [A-Z]{3,4} \w{3} \w{3} \d{1,2} \d{4}$/.test(l)) || "";
+  // Headlines like ...SMALL CRAFT ADVISORY IN EFFECT UNTIL 6 PM...
+  const joined = lines.join("\n");
+  const advisories = [...joined.matchAll(/^\.\.\.([\s\S]+?)\.\.\.\s*$/gm)].map(m => m[1].replace(/\s+/g, " "));
+  // Periods like .TODAY...text  (text can wrap across lines)
+  const periods = [];
+  const re = /^\.([A-Z][A-Z ]+?)\.\.\.([\s\S]*?)(?=^\.[A-Z][A-Z ]+?\.\.\.|$(?![\s\S]))/gm;
+  for (const m of joined.matchAll(re)) {
+    const txt = m[2].replace(/\s+/g, " ").trim();
+    // Pull out the "Wave Detail: ..." sentence so it can be shown dimmer
+    const wd = txt.match(/Wave Detail:[^.]*\./);
+    const main = wd ? txt.replace(wd[0], "").replace(/\s+/g, " ").trim() : txt;
+    periods.push({ name: titleCase(m[1]), text: main, detail: wd ? wd[0] : "" });
+  }
+  return { issued, advisories, periods };
+}
+
+function periodHtml(p) {
+  return `<div class="fc-period"><h3>${esc(p.name)}</h3><p>${esc(p.text)}</p>${p.detail ? `<p class="detail">${esc(p.detail)}</p>` : ""}</div>`;
+}
+
+async function loadForecast() {
+  const el = document.getElementById("fcBody");
+  try {
+    const text = await fetchFirst(FORECAST_SOURCES, t => t.includes("$$") || /^\.[A-Z]/m.test(t));
+    const fc = parseForecast(text);
+    if (!fc.periods.length) throw new Error("No forecast periods found");
+    const first = fc.periods.slice(0, FORECAST_PERIODS_SHOWN), rest = fc.periods.slice(FORECAST_PERIODS_SHOWN);
+    el.innerHTML = `
+      ${fc.issued ? `<p class="fc-issued">Issued ${esc(fc.issued)}</p>` : ""}
+      ${fc.advisories.map(a => `<p class="fc-adv">${esc(sentenceCase(a))}</p>`).join("")}
+      ${first.map(periodHtml).join("")}
+      ${rest.length ? `<div class="fc-more" id="fcMore" hidden>${rest.map(periodHtml).join("")}</div>
+        <button class="fc-toggle" id="fcToggle" aria-expanded="false" aria-controls="fcMore">Show full forecast</button>` : ""}
+      <p class="fc-foot">National Weather Service, Boston/Norton.
+        <a href="https://forecast.weather.gov/shmrn.php?mz=${FORECAST_ZONE}" target="_blank" rel="noopener">Full forecast on weather.gov</a></p>`;
+    const t = document.getElementById("fcToggle");
+    if (t) t.addEventListener("click", () => {
+      const more = document.getElementById("fcMore");
+      more.hidden = !more.hidden;
+      t.setAttribute("aria-expanded", !more.hidden);
+      t.textContent = more.hidden ? "Show full forecast" : "Show less";
+    });
+  } catch (e) {
+    el.innerHTML = `<p class="fc-err">Couldn't load the forecast. Check that /forecast on your site returns the NWS text. Details: ${esc(e.message)}<br>
+      <a href="https://forecast.weather.gov/shmrn.php?mz=${FORECAST_ZONE}" target="_blank" rel="noopener" style="color:var(--deep)">Open it on weather.gov</a></p>`;
+  }
 }
 
 /* ---------------- Formatting ---------------- */
@@ -391,7 +495,6 @@ function fmtTime(d) {
   const clock = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   return mins < 90 ? `${clock} (${mins} min ago)` : `${d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
 }
-const kt = (ms) => ms * 1.94384;
 function windColor(ms) {
   const kt = ms * 1.94384;
   return kt < 10 ? "var(--w0)" : kt < 15 ? "var(--w1)" : kt < 20 ? "var(--w2)" : kt < 25 ? "var(--w3)" : "var(--w4)";
@@ -407,7 +510,7 @@ function visible(s) {
     temp: show.temp && s.wtmp != null,
   };
 }
-const hasAny = (v) => v.wind || v.gust || v.wave || v.temp;
+function hasAny(v) { return v.wind || v.gust || v.wave || v.temp; }
 
 /* ---------------- Rendering ---------------- */
 function markerHtml(s) {
@@ -417,49 +520,18 @@ function markerHtml(s) {
   if (v.wave) tags.push(`<span class="t-wave">${wave(s.wvht)} ${units.wave}</span>`);
   if (v.temp) tags.push(`<span class="t-temp">${temp(s.wtmp)}°</span>`);
   const tagHtml = tags.length ? `<div class="tags">${tags.join("")}</div>` : "";
-  const stale = isStale(s);
-  const old = stale ? " old" : "";
+  const old = isStale(s) ? " old" : "";
 
-  // Wave ripples: ring size grows with wave height; one pulse per dominant wave period.
-  let ripples = "";
-  if (v.wave && !stale) {
-    const size = Math.round(Math.min(46 + s.wvht * 34, 170));
-    const dur = Math.min(Math.max(s.dpd ?? 6, 3), 14);
-    ripples = `<span class="ripple" style="--size:${size}px;--dur:${dur}s"></span>`.repeat(2);
-  }
+  if (!v.wind) return `<div class="stn nowind${old}"><span class="pin"></span>${tagHtml}</div>`;
 
-  if (!v.wind) return `<div class="stn nowind${old}">${ripples}<span class="pin"></span>${tagHtml}</div>`;
-
-  const k = kt(s.wspd);
-  const rot = s.wdir == null ? 0 : (s.wdir + 180) % 360;   // point downwind
-
-  // Wind chevrons: skip in near-calm; cycle time drops from ~3.2s to 0.8s as wind rises.
-  let flow = "";
-  if (!stale && s.wdir != null && k >= 3) {
-    const fdur = Math.min(Math.max(3.4 - k * 0.09, 0.8), 3.2).toFixed(2);
-    const chev = `<i><svg viewBox="-7 -7 14 14"><path d="M-6 4 L0 -3 L6 4" fill="none" stroke="${windColor(s.wspd)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></i>`;
-    flow = `<div class="flow" style="--rot:${rot}deg;--fdur:${fdur}s">${chev.repeat(3)}</div>`;
-  }
-
-  // Gust pulse: amplitude grows with the gap between gusts and steady wind.
-  let core = `class="core"`;
-  if (!stale && show.gust && s.gst != null) {
-    const gap = kt(s.gst) - k;
-    if (gap >= 3) {
-      const amp = Math.min(0.05 + gap * 0.012, 0.22).toFixed(3);
-      const delay = (-(parseInt(s.id, 36) % 32) / 10).toFixed(1);   // stagger stations so they don't pulse in sync
-      core = `class="core gusty" style="--amp:${amp};--delay:${delay}s"`;
-    }
-  }
-
+  // NDBC direction = where wind comes FROM; rotate 180° so the arrow points downwind.
+  const rot = s.wdir == null ? 0 : (s.wdir + 180) % 360;
   const arrow = s.wdir == null ? "" :
     `<path d="M26 1 L34 13 L18 13 Z" fill="${windColor(s.wspd)}" stroke="#08131D" stroke-width="1.5" transform="rotate(${rot} 26 26)"/>`;
-  return `<div class="stn${old}">${ripples}${flow}
-    <div ${core}>
-      <svg width="52" height="52" viewBox="0 0 52 52" aria-hidden="true">
-        ${arrow}<circle cx="26" cy="26" r="14" fill="${windColor(s.wspd)}" stroke="#08131D" stroke-width="2"/>
-      </svg><span class="spd">${wind(s.wspd)}</span>
-    </div>${tagHtml}</div>`;
+  return `<div class="stn${old}">
+    <svg width="52" height="52" viewBox="0 0 52 52" aria-hidden="true">
+      ${arrow}<circle cx="26" cy="26" r="14" fill="${windColor(s.wspd)}" stroke="#08131D" stroke-width="2"/>
+    </svg><span class="spd">${wind(s.wspd)}</span>${tagHtml}</div>`;
 }
 
 function popupHtml(s) {
@@ -532,21 +604,8 @@ document.getElementById("list").addEventListener("click", (e) => {
   markers[s.id].openPopup();
 });
 
-// Motion: on by default unless the visitor's device asks for reduced motion.
-const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-let motion = loadPref("motion", { on: !reduceMotion }).on;
-function applyMotion() {
-  document.body.classList.toggle("still", !motion);
-  const b = document.getElementById("motion");
-  b.setAttribute("aria-pressed", motion);
-}
-applyMotion();
-document.getElementById("motion").addEventListener("click", () => {
-  motion = !motion; savePref("motion", { on: motion }); applyMotion();
-});
-
 // Reading toggles
-document.querySelectorAll(".chip:not(#motion)").forEach(b => {
+document.querySelectorAll(".chip").forEach(b => {
   b.setAttribute("aria-pressed", show[b.dataset.layer]);
   b.addEventListener("click", () => {
     const k = b.dataset.layer;
@@ -569,10 +628,12 @@ document.querySelectorAll("[data-unit]").forEach(b => {
   });
 });
 
-document.getElementById("refresh").addEventListener("click", load);
+document.getElementById("refresh").addEventListener("click", () => { load(); loadForecast(); });
 
 load();
+loadForecast();
 setInterval(load, REFRESH_MINUTES * 60 * 1000);
+setInterval(loadForecast, FORECAST_REFRESH_MINUTES * 60 * 1000);
 </script>
 </body>
 </html>
